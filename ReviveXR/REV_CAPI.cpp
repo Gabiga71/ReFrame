@@ -92,7 +92,8 @@ OVR_PUBLIC_FUNCTION(void) ovr_Shutdown()
 		ovr_Destroy(&*it++);
 	}
 
-	// Destroy and reset the instance
+	// Destroy and reset the instance, after the input actions that belong to it
+	ReleaseSharedInputManager();
 	XrResult rs = xrDestroyInstance(g_Instance);
 	assert(XR_SUCCEEDED(rs));
 	g_Instance = XR_NULL_HANDLE;

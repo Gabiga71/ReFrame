@@ -40,6 +40,8 @@ InputManager::InputManager(XrInstance instance)
 		suggestedBinding.suggestedBindings = bindings.data();
 		suggestedBinding.interactionProfile = profile;
 		XrResult rs = xrSuggestInteractionProfileBindings(instance, &suggestedBinding);
+		if (XR_FAILED(rs))
+			RevLogResult("xrSuggestInteractionProfileBindings", rs, __FILE__, __LINE__);
 		assert(XR_SUCCEEDED(rs));
 	}
 }
@@ -267,6 +269,8 @@ InputManager::Action::Action(InputDevice* device, XrActionType type, const char*
 		createInfo.subactionPaths = s_SubActionPaths;
 	}
 	XrResult rs = xrCreateAction(device->ActionSet(), &createInfo, &m_Action);
+	if (XR_FAILED(rs))
+		RevLogResult(actionName, rs, __FILE__, __LINE__);
 	assert(XR_SUCCEEDED(rs));
 }
 
@@ -345,6 +349,8 @@ InputManager::InputDevice::InputDevice(XrInstance instance, const char* actionSe
 	strcpy_s(createInfo.actionSetName, actionSetName);
 	strcpy_s(createInfo.localizedActionSetName, localizedName);
 	XrResult rs = xrCreateActionSet(instance, &createInfo, &m_ActionSet);
+	if (XR_FAILED(rs))
+		RevLogResult(actionSetName, rs, __FILE__, __LINE__);
 	assert(XR_SUCCEEDED(rs));
 }
 

@@ -78,7 +78,8 @@ struct ovrHmdStruct
 	std::map<XrVisibilityMaskTypeKHR, VisibilityMask> VisibilityMasks[ovrEye_Count];
 
 	// Input
-	std::unique_ptr<InputManager> Input;
+	// Shared by every session of the process, see InitSession.
+	std::shared_ptr<InputManager> Input;
 
 	ovrResult InitSession(XrInstance instance);
 	ovrResult StartSession(void* graphicsBinding);
@@ -89,5 +90,9 @@ struct ovrHmdStruct
 	ovrResult UpdateStencil(ovrEyeType view, XrVisibilityMaskTypeKHR type);
 	ovrResult LocateViews(XrView out_Views[ovrEye_Count], XrViewStateFlags* out_Flags = nullptr) const;
 	ovrResult RecenterSpace(ovrTrackingOrigin origin, XrSpace anchor, ovrPosef offset = OVR::Posef::Identity());
+	ovrResult AlignSpaceYaw(ovrTrackingOrigin origin, XrSpace anchor);
 	bool SupportsFormat(int64_t format) const;
 };
+
+// Drops the process wide input actions; must run before the instance is destroyed.
+void ReleaseSharedInputManager();

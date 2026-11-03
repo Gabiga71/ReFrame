@@ -23,7 +23,15 @@ struct ovrTextureSwapChainData
 	uint32_t Length;
 	uint32_t CurrentIndex;
 
+	// Virtual so that ovr_DestroyTextureSwapChain, which deletes through this base type, runs
+	// the API specific cleanup as well.
+	virtual ~ovrTextureSwapChainData() {}
+
 	virtual ovrResult Commit(ovrSession session);
+
+	// The texture the application should render into for the given image, when it differs from
+	// the runtime's own swapchain image. Null means the runtime image is handed out directly.
+	virtual void* GetApplicationImage(uint32_t index) { return nullptr; }
 
 	ovrResult Init(XrSession session, const ovrTextureSwapChainDesc* desc, int64_t format);
 

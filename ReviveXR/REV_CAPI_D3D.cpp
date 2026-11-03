@@ -10,6 +10,7 @@
 #include <wrl/client.h>
 #include <vector>
 #include <algorithm>
+#include <atomic>
 
 using Microsoft::WRL::ComPtr;
 
@@ -55,6 +56,39 @@ _CreateRenderTargetView TrueCreateRenderTargetView;
 _CreateShaderResourceView12 TrueCreateShaderResourceView12;
 _CreateRenderTargetView12 TrueCreateRenderTargetView12;
 
+// These hooks see every view the game creates, not only those on swapchain textures, so only
+// failures are logged and only a few of them. A failed view on a swapchain texture is how a
+// format mismatch shows up: the engine treats it as fatal and exits without an error dialog.
+static void LogViewFailure(const char* call, HRESULT hr, ID3D11Resource* pResource, DXGI_FORMAT viewFormat,
+	int viewDimension = -1, int mipSlice = -1)
+{
+	static std::atomic<int> s_logged{ 0 };
+	if (SUCCEEDED(hr) || s_logged.fetch_add(1) >= 16)
+		return;
+
+	D3D11_TEXTURE2D_DESC desc = {};
+	ComPtr<ID3D11Texture2D> texture;
+	if (pResource && SUCCEEDED(pResource->QueryInterface(IID_PPV_ARGS(&texture))))
+		texture->GetDesc(&desc);
+	RevLog("%s failed (hr 0x%08lx): view format %d dimension %d mip %d; texture format %d %ux%u mips %u array %u samples %u bind 0x%x misc 0x%x",
+		call, (unsigned long)hr, (int)viewFormat, viewDimension, mipSlice,
+		(int)desc.Format, desc.Width, desc.Height, desc.MipLevels, desc.ArraySize, desc.SampleDesc.Count,
+		desc.BindFlags, desc.MiscFlags);
+}
+
+// The mip a 2D render target view targets, for the dimensions that have one.
+static int RtvMipSlice(const D3D11_RENDER_TARGET_VIEW_DESC* desc)
+{
+	if (!desc)
+		return -1;
+	switch (desc->ViewDimension)
+	{
+	case D3D11_RTV_DIMENSION_TEXTURE2D:      return (int)desc->Texture2D.MipSlice;
+	case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: return (int)desc->Texture2DArray.MipSlice;
+	default:                                 return -1;
+	}
+}
+
 HRESULT WINAPI HookCreateRenderTargetView(
 	ID3D11Device						*This,
 	ID3D11Resource                      *pResource,
@@ -71,10 +105,16 @@ HRESULT WINAPI HookCreateRenderTargetView(
 			desc = *pDesc;
 			desc.Format = format;
 		}
-		return TrueCreateRenderTargetView(This, pResource, &desc, ppRTView);
+		const HRESULT hr = TrueCreateRenderTargetView(This, pResource, &desc, ppRTView);
+		LogViewFailure("CreateRenderTargetView (format forced by Revive)", hr, pResource, desc.Format,
+			(int)desc.ViewDimension, RtvMipSlice(&desc));
+		return hr;
 	}
 
-	return TrueCreateRenderTargetView(This, pResource, pDesc, ppRTView);
+	const HRESULT hr = TrueCreateRenderTargetView(This, pResource, pDesc, ppRTView);
+	LogViewFailure("CreateRenderTargetView", hr, pResource, pDesc ? pDesc->Format : DXGI_FORMAT_UNKNOWN,
+		pDesc ? (int)pDesc->ViewDimension : -1, RtvMipSlice(pDesc));
+	return hr;
 }
 
 HRESULT WINAPI HookCreateShaderResourceView(
@@ -93,10 +133,14 @@ HRESULT WINAPI HookCreateShaderResourceView(
 			desc = *pDesc;
 			desc.Format = format;
 		}
-		return TrueCreateShaderResourceView(This, pResource, &desc, ppSRView);
+		const HRESULT hr = TrueCreateShaderResourceView(This, pResource, &desc, ppSRView);
+		LogViewFailure("CreateShaderResourceView (format forced by Revive)", hr, pResource, desc.Format);
+		return hr;
 	}
 
-	return TrueCreateShaderResourceView(This, pResource, pDesc, ppSRView);
+	const HRESULT hr = TrueCreateShaderResourceView(This, pResource, pDesc, ppSRView);
+	LogViewFailure("CreateShaderResourceView", hr, pResource, pDesc ? pDesc->Format : DXGI_FORMAT_UNKNOWN);
+	return hr;
 }
 
 HRESULT WINAPI HookCreateRenderTargetView12(
@@ -245,9 +289,15 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_GetTextureSwapChainBufferDX(ovrSession sessio
 	if (index < 0)
 		index = chain->CurrentIndex;
 
-	XrSwapchainImageD3D11KHR image = ((XrSwapchainImageD3D11KHR*)chain->Images)[index];
+	if ((uint32_t)index >= chain->Length)
+		return ovrError_InvalidParameter;
 
-	HRESULT hr = image.texture->QueryInterface(iid, out_Buffer);
+	// A swapchain may hand the application its own texture in place of the runtime image.
+	IUnknown* texture = (IUnknown*)chain->GetApplicationImage(index);
+	if (!texture)
+		texture = ((XrSwapchainImageD3D11KHR*)chain->Images)[index].texture;
+
+	HRESULT hr = texture->QueryInterface(iid, out_Buffer);
 	if (FAILED(hr))
 		return ovrError_InvalidParameter;
 

@@ -15,6 +15,37 @@
 
 using namespace std::chrono_literals;
 
+// What the temporary session below found out, kept for the lifetime of the process.
+//
+// Unreal calls ovr_Create twice. Every temporary session is a complete scene application start
+// and quit as far as SteamVR is concerned (it logs the game as having exited each time), so
+// querying once per process avoids a second round of that churn right before the real session.
+namespace
+{
+	struct ViewCache
+	{
+		bool Valid = false;
+		XrSystemId System = XR_NULL_SYSTEM_ID;
+		XrView Views[ovrEye_Count];
+		XrExtent2Df Bounds;
+	};
+
+	ViewCache g_ViewCache;
+
+	// The input actions are created once per instance and shared by every session. OpenXR
+	// refuses binding suggestions once any session has attached action sets, so a fresh
+	// InputManager for a later session would silently end up without bindings. Sharing also
+	// avoids rebuilding identically named action sets each time Unreal calls ovr_Create.
+	std::shared_ptr<InputManager> g_SharedInput;
+	XrInstance g_SharedInputInstance = XR_NULL_HANDLE;
+}
+
+void ReleaseSharedInputManager()
+{
+	g_SharedInput.reset();
+	g_SharedInputInstance = XR_NULL_HANDLE;
+}
+
 ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 {
 	XR_FUNCTION(instance, GetD3D11GraphicsRequirementsKHR);
@@ -66,6 +97,17 @@ ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 			ViewPoses[i].fov = ViewFov[i].recommendedFov;
 			ViewPoses[i].pose = XR::Posef::Identity();
 		}
+	}
+	else if (g_ViewCache.Valid && g_ViewCache.System == System)
+	{
+		for (int i = 0; i < ovrEye_Count; i++)
+		{
+			ViewPoses[i] = g_ViewCache.Views[i];
+			ViewFov[i].recommendedFov = ViewPoses[i].fov;
+			ViewFov[i].maxMutableFov = ViewPoses[i].fov;
+		}
+		bounds = g_ViewCache.Bounds;
+		RevLog("reusing the field of view queried earlier, no temporary session needed");
 	}
 	else if (SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&pFactory)))
 	{
@@ -143,6 +185,13 @@ ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 		}
 
 		CHK_XR(xrGetReferenceSpaceBoundsRect(Session, XR_REFERENCE_SPACE_TYPE_STAGE, &bounds));
+
+		g_ViewCache.System = System;
+		for (int i = 0; i < ovrEye_Count; i++)
+			g_ViewCache.Views[i] = ViewPoses[i];
+		g_ViewCache.Bounds = bounds;
+		g_ViewCache.Valid = true;
+
 		CHK_OVR(DestroySession());
 	}
 
@@ -157,7 +206,16 @@ ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 	}
 
 	// Initialize input manager
-	Input.reset(new InputManager(Instance));
+	if (!g_SharedInput || g_SharedInputInstance != Instance)
+	{
+		g_SharedInput = std::make_shared<InputManager>(Instance);
+		g_SharedInputInstance = Instance;
+	}
+	else
+	{
+		RevLog("reusing the input actions created earlier");
+	}
+	Input = g_SharedInput;
 	return ovrSuccess;
 }
 
@@ -226,6 +284,11 @@ ovrResult ovrHmdStruct::BeginSession()
 	long long currentIndex = (*CurrentFrame).frameIndex;
 	CHK_OVR(ovr_WaitToBeginFrame(this, currentIndex));
 	RecenterSpace(ovrTrackingOrigin_EyeLevel, ViewSpace);
+	// The stage space faces wherever the runtime's play area says forward is, and on SteamVR
+	// that has nothing to do with where the player stands at launch: on a Steam Frame it was
+	// close to the opposite direction. Point the floor level origin the way the headset faces,
+	// but leave it at the centre of the play area so the boundary still lines up.
+	AlignSpaceYaw(ovrTrackingOrigin_FloorLevel, ViewSpace);
 	CHK_OVR(ovr_BeginFrame(this, currentIndex));
 	return ovrSuccess;
 }
@@ -329,6 +392,31 @@ ovrResult ovrHmdStruct::RecenterSpace(ovrTrackingOrigin origin, XrSpace anchor, 
 	XrReferenceSpaceCreateInfo spaceInfo = XR_TYPE(REFERENCE_SPACE_CREATE_INFO);
 	spaceInfo.referenceSpaceType = static_cast<XrReferenceSpaceType>(XR_REFERENCE_SPACE_TYPE_LOCAL + origin);
 	spaceInfo.poseInReferenceSpace = XR::Posef(newOrigin * offset);
+	CHK_XR(xrDestroySpace(TrackingSpaces[origin]));
+	CHK_XR(xrCreateReferenceSpace(Session, &spaceInfo, &TrackingSpaces[origin]));
+	return ovrSuccess;
+}
+
+ovrResult ovrHmdStruct::AlignSpaceYaw(ovrTrackingOrigin origin, XrSpace anchor)
+{
+	std::lock_guard<std::shared_mutex> lk(TrackingMutex);
+	XrSpaceLocation location = XR_TYPE(SPACE_LOCATION);
+	CHK_XR(xrLocateSpace(anchor, OriginSpaces[origin], (*CurrentFrame).predictedDisplayTime, &location));
+
+	if (!(location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))
+	{
+		RevLog("could not align the tracking origin: headset orientation not valid yet");
+		return ovrError_InvalidHeadsetOrientation;
+	}
+
+	float yaw;
+	XR::Quatf(location.pose.orientation).GetYawPitchRoll(&yaw, nullptr, nullptr);
+	RevLog("aligned tracking origin %d with the headset (yaw %.0f degrees)", (int)origin, yaw * 180.0f / 3.14159265f);
+
+	XrReferenceSpaceCreateInfo spaceInfo = XR_TYPE(REFERENCE_SPACE_CREATE_INFO);
+	spaceInfo.referenceSpaceType = static_cast<XrReferenceSpaceType>(XR_REFERENCE_SPACE_TYPE_LOCAL + origin);
+	const XR::Posef newOrigin(OVR::Quatf(OVR::Axis_Y, yaw), XR::Vector3f());
+	spaceInfo.poseInReferenceSpace = newOrigin;
 	CHK_XR(xrDestroySpace(TrackingSpaces[origin]));
 	CHK_XR(xrCreateReferenceSpace(Session, &spaceInfo, &TrackingSpaces[origin]));
 	return ovrSuccess;
