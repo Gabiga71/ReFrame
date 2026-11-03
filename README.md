@@ -10,7 +10,7 @@ The original Revive README follows, with the installation steps adapted to ReFra
 
 # Revive Compatibility Layer
 
-This is a compatibility layer between the Oculus SDK and OpenVR/OpenXR. It allows you to play Oculus-exclusive games on your HTC Vive or Valve Index.
+This is a compatibility layer between the Oculus SDK and OpenVR/OpenXR. It allows you to play Oculus-exclusive games on a Steam Frame through SteamVR.
 
 [Refer to the wiki](https://github.com/LibreVR/Revive/wiki) if you run into any problems. You can also find a [community-compiled list of working games on the wiki](https://github.com/LibreVR/Revive/wiki/Compatibility-list), feel free to add your own results.
 
