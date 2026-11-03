@@ -38,10 +38,16 @@ Minden változás commitolva van a `steamframe` ágon (pusholva a github.com/Gab
 
 ## Commitok
 
-Négy új commit került a `91c5792` (Update version.h) után, mind fent van a ReFrame repóban.
+Tíz új commit került a `91c5792` (Update version.h) után, mind fent van a ReFrame repóban.
 
 | Hash | Üzenet |
 | --- | --- |
+| `d9f1f34` | Note that other SteamVR headsets are untested with ReFrame |
+| `4077b66` | Describe the compatibility layer as targeting the Steam Frame |
+| `dfbd614` | Point the README installation steps at the ReFrame releases |
+| `e6c01ce` | Update the development log with the installer and release |
+| `676a978` | Enable the OpenXR backend by default in the installer |
+| `1a2ebc0` | Introduce ReFrame in the README and add the development log |
 | `ab2de1b` | Deploy the input manifests with the build and remember the OpenXR toggle |
 | `f5c0f76` | Get Unreal based Oculus games onto a Steam Frame through ReviveXR |
 | `ed80a03` | Ignore qmake generated ReviveOverlay build files |
@@ -80,6 +86,7 @@ A legutóbbi teszten (2026-11-03, 18:31-ig) csak a `ReviveOverlay.txt` jött lé
 
 | Dátum | Tétel | Röviden |
 | --- | --- | --- |
+| 2026-11-03 | README: Steam Frame leírás | A „Revive Compatibility Layer” bevezető mondata már nem a HTC Vive-ot és az Indexet, hanem a Steam Frame-et nevezi meg (SteamVR-en át), és jelzi, hogy más SteamVR-headsetek is működhetnek, de ReFrame-mel nincsenek tesztelve (`4077b66`, `d9f1f34`) |
 | 2026-11-03 | README telepítési lépések | Az eredeti Revive README Installation része a ReFrame-re igazítva: letöltés a Gabiga71/ReFrame/releases oldalról (nem `/latest`, mert az kihagyja a pre-release-t), OpenXR-alapértelmezés, SteamVR mint OpenXR runtime, ReFrame issues link. A wiki- és kompatibilitási linkek a Revive-ra mutatnak továbbra is |
 | 2026-11-03 | Telepítő (3.2.0-reframe.1) | NSIS 3.13 és GitHub CLI telepítve (winget). Teljes újrafordítás x64 + x86, overlay install lépés (SupportAssets, vrmanifestek), vc_redist.x64 (Microsoft-aláírás ellenőrizve). A telepítő alapból bekapcsolja a `UseOpenXR`-t, ha a felhasználó még nem választott (commit `676a978`). Eredmény: `ReFrame-Revive-3.2.0-reframe.1-Setup.exe`, 55 MB, 193 fájl. Kiadva pre-release-ként: https://github.com/Gabiga71/ReFrame/releases/tag/v3.2.0-reframe.1 (tag → `676a978`). Tiszta gépen még nincs tesztelve |
 | 2026-11-03 | README és devlog a repóban | Döntés: a projekt nem lesz átnevezve, hogy az eredeti Revive-szerzők érdeme és története ép maradjon. A README elejére ReFrame-bevezető került (fork, cél, MIT, az eredeti szerzők érdeme), az eredeti README változatlanul alatta. A `DEVLOG.md` bekerült a repóba |
