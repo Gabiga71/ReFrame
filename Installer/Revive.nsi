@@ -132,6 +132,12 @@ install:
   
   ; Install redistributable
   ExecWait '"$INSTDIR\vcredist_x64.exe" /install /quiet'
+
+  ; ReFrame runs games through the OpenXR backend, so turn it on unless the user already
+  ; made a choice in the tray menu. The overlay reads this value on start.
+  ReadRegStr $0 HKCU "Software\Revive\ReviveOverlay" "UseOpenXR"
+  StrCmp $0 "" 0 +2
+    WriteRegStr HKCU "Software\Revive\ReviveOverlay" "UseOpenXR" "true"
   
   ; Execute the dashboard to add the application manifest
   ExecWait '"$INSTDIR\ReviveOverlay.exe" -manifest'
