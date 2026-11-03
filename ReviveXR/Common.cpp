@@ -1,12 +1,88 @@
 #include "Common.h"
 
 #include <Windows.h>
+#include <ShlObj.h>
+#include <mutex>
+#include <stdarg.h>
+#include <stdio.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
 extern XrInstance g_Instance;
 
 XrResult g_LastResult = XR_SUCCESS;
+
+static FILE* GetLogFile()
+{
+	static FILE* s_file = nullptr;
+	static bool s_opened = false;
+
+	if (!s_opened)
+	{
+		s_opened = true;
+
+		wchar_t path[MAX_PATH] = {};
+		if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path)))
+		{
+			// Forward slashes are accepted by the Win32 file APIs and keep this readable.
+			wcscat_s(path, MAX_PATH, L"/Revive");
+			CreateDirectoryW(path, NULL);
+			wcscat_s(path, MAX_PATH, L"/ReviveXR.txt");
+			// Append rather than truncate, and tag every line with the process id: a game may
+			// spawn child processes that each load this module, and with truncating writes they
+			// overwrite each other at their own file offsets, shredding the log into unreadable
+			// fragments. The file therefore accumulates across runs; delete it before a session
+			// when a clean capture is wanted.
+			s_file = _wfopen(path, L"a");
+		}
+	}
+
+	return s_file;
+}
+
+void RevLog(const char* format, ...)
+{
+	FILE* file = GetLogFile();
+	if (!file)
+		return;
+
+	char line[1024];
+	// Wall clock time, so entries can be lined up with the injector and overlay logs.
+	SYSTEMTIME now;
+	GetLocalTime(&now);
+	const int prefix = snprintf(line, sizeof(line), "[%02u:%02u:%02u.%03u %5lu] ",
+		now.wHour, now.wMinute, now.wSecond, now.wMilliseconds, GetCurrentProcessId());
+	if (prefix < 0 || prefix >= (int)sizeof(line))
+		return;
+
+	va_list args;
+	va_start(args, format);
+	const int written = vsnprintf(line + prefix, sizeof(line) - prefix - 2, format, args);
+	va_end(args);
+	if (written < 0)
+		return;
+
+	// Assemble the whole line first and emit it in a single write, so concurrent callers
+	// cannot interleave fragments of each other inside one line.
+	size_t length = prefix + (size_t)written;
+	if (length > sizeof(line) - 2)
+		length = sizeof(line) - 2;
+	line[length++] = 10;
+
+	static std::mutex s_mutex;
+	std::lock_guard<std::mutex> lock(s_mutex);
+	fwrite(line, 1, length, file);
+	fflush(file);
+}
+
+void RevLogResult(const char* expression, XrResult result, const char* file, int line)
+{
+	// Split across calls so the format strings stay free of embedded newlines;
+	// RevLog already terminates each line.
+	RevLog("FAILED: %s", expression);
+	RevLog("  result: %ls", ResultToString(result));
+	RevLog("  at: %s:%d", file, line);
+}
 
 ovrResult ResultToOvrResult(XrResult error)
 {

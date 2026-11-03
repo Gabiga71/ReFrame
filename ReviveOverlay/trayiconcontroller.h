@@ -13,6 +13,10 @@ enum ETrayInfo
 	TrayInfo_AutoLaunchEnabled,
 	TrayInfo_AutoLaunchFailed,
 	TrayInfo_OculusAccessTokenNotFound,
+	// Launch status notifications carry their own text and have no click action, so
+	// messageClicked() deliberately does not handle this value: a click on one of them
+	// must not replay the action of whatever notification came before it.
+	TrayInfo_LaunchStatus,
 };
 
 class CTrayIconController : public QObject
@@ -29,6 +33,9 @@ public:
 
 	bool Init();
 	void ShowInformation(ETrayInfo info);
+	void ShowLaunching(const QString& application);
+	void ShowLaunchFailed(const QString& application);
+	void ShowAlreadyRunning(const QString& application);
 
 public slots:
 	void quit();

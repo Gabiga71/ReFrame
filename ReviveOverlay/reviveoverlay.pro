@@ -39,7 +39,7 @@ INCLUDEPATH += ../Externals/openvr/headers ../Externals/LibOVR/Include ../Revive
 Debug:LIBS += -L../Debug
 Release:LIBS += -L../Release
 
-LIBS += -L../Externals/openvr/lib/win64 -lopenvr_api64 -lCredui -lAdvapi32
+LIBS += -L../Externals/openvr/lib/win64 -lopenvr_api64 -lCredui -lAdvapi32 -lWinHttp
 
 Debug:DESTDIR = ../Debug
 Release:DESTDIR = ../Release

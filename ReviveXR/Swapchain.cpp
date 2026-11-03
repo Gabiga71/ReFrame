@@ -146,19 +146,47 @@ DXGI_FORMAT ovrTextureSwapChainData::NegotiateFormat(ovrSession session, DXGI_FO
 	if (session->SupportsFormat(format))
 		return format;
 
-	// Upgrade R11G11B10F to RGBA16F if it's available
-	if (format == DXGI_FORMAT_R11G11B10_FLOAT && session->SupportsFormat(DXGI_FORMAT_R16G16B16A16_FLOAT))
-			return DXGI_FORMAT_R16G16B16A16_FLOAT;
+	// Candidates in preference order, tried until one is supported. A substitution that is
+	// itself unsupported must not end the search: SteamVR accepts neither B8G8R8X8_UNORM nor
+	// B8G8R8A8_UNORM, only their sRGB variants, so any single step mapping dead-ends there.
+	//
+	// Substituting an sRGB format for a linear one is not free. The runtime then decodes the
+	// texture when it samples it, and Revive builds the application facing views from the
+	// negotiated format, so content that was already gamma encoded is encoded a second time
+	// and reads back washed out. Keeping the gamma exact needs a mutable format swapchain
+	// with views in the originally requested format; that is the next step if colours look
+	// wrong, but a visible image beats no image at all.
+	static const struct
+	{
+		DXGI_FORMAT requested;
+		DXGI_FORMAT candidates[3];
+	} fallbacks[] = {
+		{ DXGI_FORMAT_R11G11B10_FLOAT,     { DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R10G10B10A2_UNORM,   DXGI_FORMAT_R8G8B8A8_UNORM_SRGB } },
+		{ DXGI_FORMAT_R16G16B16A16_FLOAT,  { DXGI_FORMAT_R10G10B10A2_UNORM,  DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_UNKNOWN } },
+		{ DXGI_FORMAT_R8G8B8A8_UNORM,      { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_UNKNOWN } },
+		{ DXGI_FORMAT_B8G8R8A8_UNORM,      { DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_UNKNOWN } },
+		{ DXGI_FORMAT_B8G8R8X8_UNORM,      { DXGI_FORMAT_B8G8R8A8_UNORM,      DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_UNKNOWN } },
+		{ DXGI_FORMAT_B8G8R8X8_UNORM_SRGB, { DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_UNKNOWN,             DXGI_FORMAT_UNKNOWN } },
+	};
 
-	// If RGBA16F is not available, then attempt downgrading it to an 8-bit linear format
-	if (format == DXGI_FORMAT_R11G11B10_FLOAT || format == DXGI_FORMAT_R16G16B16A16_FLOAT)
-		return DXGI_FORMAT_R8G8B8A8_UNORM;
+	for (const auto& fallback : fallbacks)
+	{
+		if (fallback.requested != format)
+			continue;
 
-	// No runtime supports 8-bit formats without alpha, but easy to convert to one with alpha
-	if (format == DXGI_FORMAT_B8G8R8X8_UNORM)
-		return DXGI_FORMAT_B8G8R8A8_UNORM;
-	else if (format == DXGI_FORMAT_B8G8R8X8_UNORM_SRGB)
-		return DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+		for (DXGI_FORMAT candidate : fallback.candidates)
+		{
+			if (candidate != DXGI_FORMAT_UNKNOWN && session->SupportsFormat(candidate))
+			{
+				RevLog("substituting DXGI format %d for unsupported %d", (int)candidate, (int)format);
+				return candidate;
+			}
+		}
+	}
 
+	// Nothing could satisfy the request. Say so rather than silently handing the runtime a
+	// format it already rejected: xrCreateSwapchain then fails with
+	// XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED and the application has no way to tell why.
+	RevLog("no supported swapchain format for DXGI format %d, requesting it anyway", (int)format);
 	return format;
 }

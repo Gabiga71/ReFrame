@@ -3,8 +3,48 @@
 #include <wincred.h>
 #include <wrl.h>
 #include <Shlobj.h>
+#include <winhttp.h>
 
 #include <QDir>
+
+bool WindowsServices::PostHttps(const QString& host, const QString& path, const QString& body, int* outStatus)
+{
+	if (outStatus)
+		*outStatus = 0;
+
+	HINTERNET session = WinHttpOpen(L"Revive", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!session)
+		return false;
+
+	bool result = false;
+	if (HINTERNET connection = WinHttpConnect(session, qUtf16Printable(host), INTERNET_DEFAULT_HTTPS_PORT, 0))
+	{
+		if (HINTERNET request = WinHttpOpenRequest(connection, L"POST", qUtf16Printable(path),
+			nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE))
+		{
+			const QByteArray payload = body.toUtf8();
+			if (WinHttpSendRequest(request, L"Content-Type: application/x-www-form-urlencoded",
+					(DWORD)-1, (LPVOID)payload.constData(), payload.size(), payload.size(), 0) &&
+				WinHttpReceiveResponse(request, nullptr))
+			{
+				DWORD status = 0;
+				DWORD size = sizeof(status);
+				if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+					WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX))
+				{
+					if (outStatus)
+						*outStatus = (int)status;
+					result = status >= 200 && status < 300;
+				}
+			}
+			WinHttpCloseHandle(request);
+		}
+		WinHttpCloseHandle(connection);
+	}
+	WinHttpCloseHandle(session);
+	return result;
+}
 
 bool WindowsServices::CreateShortcut(QString shortcutPath, QString exePath, QString arguments, QString icon)
 {

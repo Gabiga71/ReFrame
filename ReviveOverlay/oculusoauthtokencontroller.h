@@ -31,6 +31,8 @@ public:
 	bool Connected() { return !m_strAccessToken.isEmpty(); }
 	QString GetToken() { return m_strAccessToken; }
 
+	Q_INVOKABLE void SendHeartbeat(const QString& appId);
+
 signals:
 	void TokenChanged();
 

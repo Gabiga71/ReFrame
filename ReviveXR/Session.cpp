@@ -92,12 +92,27 @@ ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 		graphicsBinding.device = pDevice.Get();
 		CHK_OVR(StartSession(&graphicsBinding));
 
+		// OpenXR permits a single session per instance, so this temporary one has to be
+		// destroyed on every path out of the block. The CHK_ macros below return early on
+		// failure, which used to leak it: every later xrCreateSession then returned
+		// XR_ERROR_LIMIT_REACHED, and an application that retries ovr_Create spins forever
+		// instead of reporting an error. Turning a recoverable failure into a hang also
+		// hides whatever failed first, so guard it rather than relying on the happy path.
+		struct SessionGuard
+		{
+			ovrHmdStruct* owner;
+			~SessionGuard() { if (owner->Session) owner->DestroySession(); }
+		} guard{ this };
+
 		if (Runtime::Get().UseHack(Runtime::HACK_WAIT_FOR_SESSION_READY))
 		{
 			// Synchronously wait for the fake session to become ready.
 			XrEventDataBuffer event;
 			const XrEventDataSessionStateChanged& stateChanged =
 				reinterpret_cast<XrEventDataSessionStateChanged&>(event);
+			// Bound the wait: a runtime that never reports READY would otherwise hang the
+			// application here with no diagnostic at all.
+			const auto deadline = std::chrono::steady_clock::now() + 5s;
 			do
 			{
 				event = XR_TYPE(EVENT_DATA_BUFFER);
@@ -106,6 +121,11 @@ ovrResult ovrHmdStruct::InitSession(XrInstance instance)
 					break;
 				if (result == XR_EVENT_UNAVAILABLE)
 					std::this_thread::sleep_for(10ms);
+				if (std::chrono::steady_clock::now() > deadline)
+				{
+					RevLog("timed out waiting for the temporary session to become ready");
+					break;
+				}
 			} while (event.type != XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED ||
 				stateChanged.state != XR_SESSION_STATE_READY);
 			assert(stateChanged.session == Session);
@@ -150,6 +170,7 @@ ovrResult ovrHmdStruct::StartSession(void* graphicsBinding)
 	createInfo.next = graphicsBinding;
 	createInfo.systemId = System;
 	CHK_XR(xrCreateSession(Instance, &createInfo, &Session));
+	RevLog("session %llx created", XR_HANDLE_ID(Session));
 	memset(&SessionStatus, 0, sizeof(SessionStatus));
 
 	// Attach it to the InputManager
@@ -186,6 +207,10 @@ ovrResult ovrHmdStruct::StartSession(void* graphicsBinding)
 	CHK_XR(xrEnumerateSwapchainFormats(Session, (uint32_t)SupportedFormats.size(), &formatCount, SupportedFormats.data()));
 	assert(formatCount == SupportedFormats.size());
 
+	RevLog("runtime accepts %u swapchain format(s):", (unsigned)SupportedFormats.size());
+	for (int64_t supported : SupportedFormats)
+		RevLog("  format %lld", (long long)supported);
+
 	Running.second.notify_all();
 
 	return ovrSuccess;
@@ -219,6 +244,7 @@ ovrResult ovrHmdStruct::DestroySession()
 	if (Input)
 		Input->AttachSession(XR_NULL_HANDLE);
 
+	RevLog("session %llx destroyed", XR_HANDLE_ID(Session));
 	CHK_XR(xrDestroySession(Session));
 	Session = XR_NULL_HANDLE;
 	ViewSpace = XR_NULL_HANDLE;

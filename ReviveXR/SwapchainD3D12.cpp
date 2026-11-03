@@ -94,7 +94,9 @@ ovrResult ovrTextureSwapChainD3D12::Create(ovrSession session, ID3D12CommandQueu
 	assert(session->SupportsFormat(format));
 
 	ovrTextureSwapChainD3D12* chain = new ovrTextureSwapChainD3D12(queue);
-	CHK_OVR(chain->Init(session->Session, desc, TextureFormatToDXGIFormat(desc->Format)));
+	// Pass the negotiated format, not the raw one: the D3D11 path already does this and
+	// discarding it here reintroduces the very mismatch NegotiateFormat exists to resolve.
+	CHK_OVR(chain->Init(session->Session, desc, format));
 	CHK_OVR(chain->EnumerateImages<XrSwapchainImageD3D12KHR>(XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR));
 
 	// If the app doesn't expect a typeless texture we need to attach the fully qualified format to each texture.

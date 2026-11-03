@@ -104,16 +104,10 @@ function generateManifest(manifest, library) {
 }
 
 function heartbeat(appId) {
-    if (Platform.AccessToken.length > 0) {
-        var xhr = new XMLHttpRequest;
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
-                console.log(xhr.responseText);        
-            }
-        }
-        xhr.open('POST', "https://graph.oculus.com/user_heartbeat?access_token=" + Platform.AccessToken);
-        xhr.send({'current_status' : 'ONLINE', 'app_id_override' : appId, 'in_vr' : 'true'});
-    }
+    // Sent from C++ over WinHTTP. Qt 5 has no TLS backend here without OpenSSL, and
+    // XMLHttpRequest.send() stringifies an object instead of form encoding it, so the
+    // parameters below never reached the server through the previous implementation.
+    Platform.SendHeartbeat(appId);
 }
 
 function verifyAppManifest(appKey) {

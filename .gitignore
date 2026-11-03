@@ -273,3 +273,21 @@ msvc_make.bat
 
 # Ignore generated proxy file
 LibOVRProxy/OVR_CAPIShim.c
+
+# Oculus SDK for Windows (ovr_sdk_win_*.zip kicsomagolva az Externals/ ala)
+Externals/.msvc/
+Externals/.ovrsource_root.props
+Externals/3rdParty/
+Externals/CMakeLists.txt
+Externals/LICENSE.txt
+Externals/LibOVRKernel/
+Externals/Logging/
+Externals/OVRRootPath.props
+Externals/Samples/
+Externals/THIRD_PARTY_NOTICES.txt
+Externals/Windows10SDKPaths.props
+Externals/common.props
+Externals/*.lnk
+
+# Ebbe a mappaba telepult a Visual Studio (12 GB, nem a projekt resze)
+/VS/

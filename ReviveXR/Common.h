@@ -25,7 +25,27 @@ constexpr const wchar_t* ResultToString(XrResult e)
 	}
 }
 
+#define XR_ENUM_CASE_CSTR(name, val) case name: return #name;
+constexpr const char* SessionStateToString(XrSessionState e)
+{
+	switch (e)
+	{
+		XR_LIST_ENUM_XrSessionState(XR_ENUM_CASE_CSTR)
+		default: return "XR_SESSION_STATE_UNKNOWN";
+	}
+}
+
+// Handles print as integers so events can be matched to the session that produced them.
+#define XR_HANDLE_ID(h) ((unsigned long long)(h))
+
 extern XrResult g_LastResult;
+
+// The OpenXR backend shipped without any logging, which makes an initialization failure
+// indistinguishable from "no headset connected" at the application level: the game simply
+// reports that it cannot run without an Oculus Rift. These write a plain text log next to
+// the other Revive logs so a failing call can be identified without a debugger attached.
+void RevLog(const char* format, ...);
+void RevLogResult(const char* expression, XrResult result, const char* file, int line);
 
 #ifdef NDEBUG
 #define assertmsg(expression, message) ((void)0)
@@ -40,7 +60,11 @@ extern XrResult g_LastResult;
 	{ \
 		g_LastResult = (x); \
 		assertmsg(XR_SUCCEEDED(g_LastResult), ResultToString(g_LastResult)); \
-		if (XR_FAILED(g_LastResult)) return ResultToOvrResult(g_LastResult); \
+		if (XR_FAILED(g_LastResult)) \
+		{ \
+			RevLogResult(#x, g_LastResult, __FILE__, __LINE__); \
+			return ResultToOvrResult(g_LastResult); \
+		} \
 	}
 
 #define CHK_OVR(x) \

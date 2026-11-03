@@ -221,6 +221,46 @@ CReviveManifestController::~CReviveManifestController()
 {
 }
 
+// The support manifest lists experiences that the Oculus client used to install next to
+// the runtime. Modern Meta Horizon clients no longer ship several of them, and a stale
+// entry is worse than a missing one: registering the app key with SteamVR makes
+// isApplicationInstalled() report the app as ready, so a store-installed app sharing that
+// key never receives a manifest entry of its own and launching it resolves to a dead path.
+// Drop every entry whose executable is not actually present.
+//
+// Note: the manifest file itself is static, so if some entries survive we still register it
+// whole and the dead keys in it stay visible to SteamVR. Only the launch path is filtered
+// in that case. Pruning the file as well would mean generating it at runtime.
+bool CReviveManifestController::PruneSupportApps()
+{
+	wchar_t basePath[MAX_PATH] = {};
+	if (!GetOculusBasePath(basePath, MAX_PATH))
+		return false;
+
+	const QDir base(QDir::fromNativeSeparators(QString::fromWCharArray(basePath)));
+
+	for (auto it = m_supportArgs.begin(); it != m_supportArgs.end(); )
+	{
+		const QString args = it.value();
+		const int start = args.indexOf("/base ");
+		const int end = start < 0 ? -1 : args.indexOf(".exe", start);
+		const QString relative = (start < 0 || end < 0) ? QString()
+			: QDir::fromNativeSeparators(args.mid(start + 6, end + 4 - start - 6));
+
+		if (relative.isEmpty() || !base.exists(relative))
+		{
+			qDebug("Support app is not installed, ignoring: %s", qUtf8Printable(it.key()));
+			it = m_supportArgs.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
+
+	return !m_supportArgs.isEmpty();
+}
+
 bool CReviveManifestController::Init()
 {
 	bool bSuccess = LoadDocument();
@@ -236,7 +276,17 @@ bool CReviveManifestController::Init()
 #ifndef DEBUG
 	// Add application and support manifest
 	AddApplicationManifest(m_appFile);
-	AddApplicationManifest(m_supportFile);
+	if (PruneSupportApps())
+	{
+		AddApplicationManifest(m_supportFile);
+	}
+	else if (vr::VRApplications())
+	{
+		// Unregister it so keys from an earlier run stop shadowing installed applications.
+		QFileInfo info(m_supportFile);
+		vr::VRApplications()->RemoveApplicationManifest(
+			qPrintable(QDir::toNativeSeparators(info.absoluteFilePath())));
+	}
 #endif
 
 	// Ensure the auto-launch flag is set
@@ -397,6 +447,22 @@ bool CReviveManifestController::LaunchSupportApp(const QString& appKey)
 	return LaunchInjector(m_supportArgs[appKey]);
 }
 
+// SteamVR keeps reporting the process id an application was identified with, so a game that
+// crashed or was killed still looks like it is running. Confirm with the operating system
+// before refusing to launch, otherwise a single stale identification blocks the
+// application until SteamVR itself is restarted.
+static bool IsProcessAlive(uint32_t processId)
+{
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+	if (!process)
+		return false;
+
+	DWORD exitCode = 0;
+	const bool alive = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+	CloseHandle(process);
+	return alive;
+}
+
 bool CReviveManifestController::launchApplication(const QString &canonicalName)
 {
 	qDebug("Launching application: %s", qUtf8Printable(canonicalName));
@@ -407,6 +473,26 @@ bool CReviveManifestController::launchApplication(const QString &canonicalName)
 
 	if (multiplayerAppKeys.indexOf(canonicalName) != -1 && !COculusOauthTokenController::SharedInstance()->Connected())
 		CTrayIconController::SharedInstance()->ShowInformation(TrayInfo_OculusAccessTokenNotFound);
+
+	// The injector reports the launched process to SteamVR, so it can tell us whether this
+	// application is already up. Starting a second instance is never useful: both compete
+	// for the one scene application the runtime allows, and the loser fails in a way that
+	// looks exactly like the first instance failing.
+	if (vr::VRApplications())
+	{
+		const uint32_t processId = vr::VRApplications()->GetApplicationProcessId(qPrintable(appKey));
+		if (processId != 0 && IsProcessAlive(processId))
+		{
+			qDebug("Already running as process %u, not launching a second instance", processId);
+			CTrayIconController::SharedInstance()->ShowAlreadyRunning(canonicalName);
+			return false;
+		}
+
+		if (processId != 0)
+			qDebug("SteamVR still reports process %u for this application, but it has exited", processId);
+	}
+
+	CTrayIconController::SharedInstance()->ShowLaunching(canonicalName);
 
 	if (!m_bUseOpenXR && vr::VRApplications())
 	{
@@ -425,8 +511,16 @@ bool CReviveManifestController::launchApplication(const QString &canonicalName)
 	for (QJsonValue app : m_manifest["applications"].toArray())
 	{
 		if (app["app_key"].toString() == appKey)
-			return LaunchInjector(app["arguments"].toString());
+		{
+			if (LaunchInjector(app["arguments"].toString()))
+				return true;
+
+			CTrayIconController::SharedInstance()->ShowLaunchFailed(canonicalName);
+			return false;
+		}
 	}
+	// No manifest entry matched, so nothing was started.
+	CTrayIconController::SharedInstance()->ShowLaunchFailed(canonicalName);
 	return false;
 }
 

@@ -79,6 +79,7 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_Initialize(const ovrInitParams* params)
 OVR_PUBLIC_FUNCTION(void) ovr_Shutdown()
 {
 	REV_TRACE(ovr_Shutdown);
+	RevLog("ovr_Shutdown called by the application");
 
 	// End all sessions
 	std::vector<XrSession> ToDestroy;
@@ -213,16 +214,23 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_Create(ovrSession* pSession, ovrGraphicsLuid*
 	ovrSession session = &g_Sessions.back();
 
 	// Initialize session, it will not be fully usable until a swapchain is created
-	CHK_OVR(session->InitSession(g_Instance));
+	const ovrResult initResult = session->InitSession(g_Instance);
+	RevLog("ovr_Create: InitSession returned %d", (int)initResult);
+	CHK_OVR(initResult);
 	if (pLuid)
 		*pLuid = session->Adapter;
 	*pSession = session;
 	return ovrSuccess;
 }
 
+// Frames that made it past the visibility check in ovr_EndFrame. Reported on destruction,
+// so a silent exit shows whether the application ever rendered anything at all.
+static std::atomic<long long> g_FramesReachingEndFrame{ 0 };
+
 OVR_PUBLIC_FUNCTION(void) ovr_Destroy(ovrSession session)
 {
 	REV_TRACE(ovr_Destroy);
+	RevLog("ovr_Destroy called after %lld frame(s) reached ovr_EndFrame", g_FramesReachingEndFrame.load());
 
 	session->DestroySession();
 
@@ -260,6 +268,9 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_GetSessionStatus(ovrSession session, ovrSessi
 		{
 			const XrEventDataSessionStateChanged& stateChanged =
 				reinterpret_cast<XrEventDataSessionStateChanged&>(event);
+			RevLog("event: %s for session %llx (current session %llx)",
+				SessionStateToString(stateChanged.state),
+				XR_HANDLE_ID(stateChanged.session), XR_HANDLE_ID(session->Session));
 			if (stateChanged.session == session->Session)
 			{
 				switch (stateChanged.state)
@@ -305,6 +316,7 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_GetSessionStatus(ovrSession session, ovrSessi
 		{
 			const XrEventDataInstanceLossPending& lossPending =
 				reinterpret_cast<XrEventDataInstanceLossPending&>(event);
+			RevLog("event: instance loss pending, telling the application to quit");
 			status.ShouldQuit = true;
 			session->SessionStatus = status;
 			break;
@@ -345,6 +357,21 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_GetSessionStatus(ovrSession session, ovrSessi
 	sessionStatus->OverlayPresent = status.OverlayPresent;
 	if (Runtime::Get().MinorVersion > 20)
 		sessionStatus->DepthRequested = Runtime::Get().CompositionDepth;
+
+	// Log what the application is told whenever it changes. An Oculus title quits on
+	// ShouldQuit or DisplayLost and does not render while IsVisible is false, so these flags
+	// account for an exit that produces no error at all.
+	static int s_lastFlags = -1;
+	const int flags = sessionStatus->IsVisible | sessionStatus->HmdPresent << 1 |
+		sessionStatus->HmdMounted << 2 | sessionStatus->DisplayLost << 3 |
+		sessionStatus->ShouldQuit << 4 | sessionStatus->HasInputFocus << 5;
+	if (flags != s_lastFlags)
+	{
+		s_lastFlags = flags;
+		RevLog("status: visible=%d present=%d mounted=%d displayLost=%d shouldQuit=%d focus=%d",
+			sessionStatus->IsVisible, sessionStatus->HmdPresent, sessionStatus->HmdMounted,
+			sessionStatus->DisplayLost, sessionStatus->ShouldQuit, sessionStatus->HasInputFocus);
+	}
 
 	return ovrSuccess;
 }
@@ -889,7 +916,15 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_WaitToBeginFrame(ovrSession session, long lon
 
 	SessionStatusBits status = session->SessionStatus;
 	if (!status.IsVisible)
+	{
+		static bool s_reported = false;
+		if (!s_reported)
+		{
+			s_reported = true;
+			RevLog("ovr_WaitToBeginFrame: session not visible yet, no frame will be rendered");
+		}
 		return ovrSuccess_NotVisible;
+	}
 
 	{
 		// Wait until the session is running, since the render thread may still be initializing
@@ -902,6 +937,14 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_WaitToBeginFrame(ovrSession session, long lon
 	XrIndexedFrameState* frameState = &session->FrameStats[frameIndex % ovrMaxProvidedFrameStats];
 	XrFrameWaitInfo waitInfo = XR_TYPE(FRAME_WAIT_INFO);
 	CHK_XR(xrWaitFrame(session->Session, &waitInfo, frameState));
+	{
+		static bool s_reported = false;
+		if (!s_reported)
+		{
+			s_reported = true;
+			RevLog("first xrWaitFrame succeeded (frame %lld)", frameIndex);
+		}
+	}
 	frameState->frameIndex = frameIndex;
 	session->CurrentFrame = frameState;
 
@@ -955,6 +998,9 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_EndFrame(ovrSession session, long long frameI
 	SessionStatusBits status = session->SessionStatus;
 	if (!status.IsVisible)
 		return ovrSuccess_NotVisible;
+
+	if (++g_FramesReachingEndFrame == 1)
+		RevLog("first frame reached ovr_EndFrame (frame %lld, %u layer(s))", frameIndex, layerCount);
 
 	// We are going to use some space handles here, don't destroy them
 	std::shared_lock<std::shared_mutex> lk(session->TrackingMutex);

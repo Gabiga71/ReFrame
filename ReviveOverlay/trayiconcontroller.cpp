@@ -92,6 +92,45 @@ void CTrayIconController::ShowInformation(ETrayInfo info)
 	}
 }
 
+// Nothing in the dashboard shows that a click was registered, and an Oculus title can
+// take many seconds before it puts anything on the headset. Without a sign that the
+// launch is under way the natural response is to click again, which starts a second
+// instance that then fails over the single scene application slot.
+void CTrayIconController::ShowLaunching(const QString& application)
+{
+	m_LastInfo = TrayInfo_LaunchStatus;
+	if (!m_trayIcon)
+		return;
+
+	m_trayIcon->showMessage("Starting " + application,
+						   "Put on the headset. The first launch of a title can take a while.",
+						   QSystemTrayIcon::Information);
+}
+
+void CTrayIconController::ShowLaunchFailed(const QString& application)
+{
+	m_LastInfo = TrayInfo_LaunchStatus;
+	if (!m_trayIcon)
+		return;
+
+	m_trayIcon->showMessage("Revive could not start " + application,
+						   "The application did not start. ReviveInjector.txt and ReviveXR.txt in the "
+						   "Revive folder under your local application data record the reason.",
+						   QSystemTrayIcon::Critical);
+}
+
+void CTrayIconController::ShowAlreadyRunning(const QString& application)
+{
+	m_LastInfo = TrayInfo_LaunchStatus;
+	if (!m_trayIcon)
+		return;
+
+	m_trayIcon->showMessage(application + " is already running",
+						   "Close it before starting it again. A second instance cannot take over "
+						   "the headset and would fail.",
+						   QSystemTrayIcon::Warning);
+}
+
 void CTrayIconController::quit()
 {
 	m_trayIcon.reset();

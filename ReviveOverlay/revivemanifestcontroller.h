@@ -59,6 +59,7 @@ private:
 	bool GetLibraries(QStringList &id_array, QStringList & path_array);
 	bool AddApplicationManifest(QFile& file);
 	bool LaunchSupportApp(const QString& appKey);
+	bool PruneSupportApps();
 
 	QFile m_appFile;
 	QFile m_manifestFile;

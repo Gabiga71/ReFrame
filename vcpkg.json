@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "revive",
+  "version": "3.2.0",
+  "description": "Compatibility layer between the Oculus SDK and OpenVR/OpenXR",
+  "homepage": "https://github.com/LibreVR/Revive",
+  "dependencies": [
+    "detours",
+    "openxr-loader",
+    "glfw3"
+  ],
+  "builtin-baseline": "af839a44c17a927468f35c7a65e200aeba337da4"
+}

@@ -284,7 +284,17 @@ int wmain(int argc, wchar_t *argv[]) {
 		NULL, (file && ext) ? workingDir : NULL, &si, &pi,
 		(DWORD)dlls.size(), dlls.c_str(), NULL))
 	{
-		LOG("Failed to create process\n");
+		// Report the actual reason: a bare "failed" message hides the common cases, such
+		// as the target executable no longer existing because the Oculus client moved or
+		// stopped shipping it (ERROR_FILE_NOT_FOUND / ERROR_PATH_NOT_FOUND).
+		DWORD error = GetLastError();
+		LPWSTR message = NULL;
+		FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_IGNORE_INSERTS, NULL, error, 0, (LPWSTR)&message, 0, NULL);
+		LOG("Failed to create process (error %lu): %ls", error, message ? message : L"no description\r\n");
+		LOG("  working directory: %ls\n", (file && ext) ? workingDir : L"(inherited)");
+		if (message)
+			LocalFree(message);
 		return -1;
 	}
 
