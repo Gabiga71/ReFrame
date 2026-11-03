@@ -12,10 +12,16 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QProcess>
+#include <QSettings>
 #include <QUrl>
 #include <QMessageBox>
 
 CTrayIconController *s_pSharedTrayController = NULL;
+
+// Stored under HKEY_CURRENT_USER\Software\Revive\ReviveOverlay.
+static const char* UseOpenXRSetting = "UseOpenXR";
+
+#define REVIVE_OVERLAY_SETTINGS QSettings::NativeFormat, QSettings::UserScope, "Revive", "ReviveOverlay"
 
 CTrayIconController *CTrayIconController::SharedInstance()
 {
@@ -43,6 +49,11 @@ bool CTrayIconController::Init()
 	m_trayIcon = std::make_unique<QSystemTrayIcon>(QIcon(":/revive_white.ico"));
 	QAction* action = m_trayIconMenu.addAction("Use OpenXR runtime");
 	action->setCheckable(true);
+	// Restore the last choice. The overlay is started by SteamVR on every launch, and a
+	// toggle that silently fell back to OpenVR made games start on the other backend.
+	const bool useOpenXR = QSettings(REVIVE_OVERLAY_SETTINGS).value(UseOpenXRSetting, false).toBool();
+	action->setChecked(useOpenXR);
+	CReviveManifestController::SharedInstance()->UseOpenXR(useOpenXR);
 	QObject::connect(action, SIGNAL(triggered(bool)), this, SLOT(openxr(bool)));
 	m_trayIconMenu.addSeparator();
 	m_trayIconMenu.addAction("&Open library", this, SLOT(show()));
@@ -140,6 +151,8 @@ void CTrayIconController::quit()
 void CTrayIconController::openxr(bool checked)
 {
 	CReviveManifestController::SharedInstance()->UseOpenXR(checked);
+	QSettings settings(REVIVE_OVERLAY_SETTINGS);
+	settings.setValue(UseOpenXRSetting, checked);
 }
 
 void CTrayIconController::inject()

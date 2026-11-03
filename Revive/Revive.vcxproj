@@ -423,4 +423,14 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <!-- The overlay registers every game with action_manifest_path Input/action_manifest.json,
+       relative to the binaries. Without these files next to them SteamVR fails to load the
+       game's input configuration, which on the OpenXR path ends with the game demoted from
+       scene application and nothing on the headset. The installer copies them too. -->
+  <ItemGroup>
+    <ReviveInputManifest Include="Input\*.json" />
+  </ItemGroup>
+  <Target Name="CopyInputManifests" AfterTargets="Build">
+    <Copy SourceFiles="@(ReviveInputManifest)" DestinationFolder="$(OutDir)Input" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
