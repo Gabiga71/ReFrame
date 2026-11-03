@@ -291,3 +291,9 @@ Externals/*.lnk
 
 # Ebbe a mappaba telepult a Visual Studio (12 GB, nem a projekt resze)
 /VS/
+
+# qmake altal generalt fajlok a ReviveOverlay buildjebol
+ReviveOverlay/Makefile
+ReviveOverlay/Makefile.Debug
+ReviveOverlay/Makefile.Release
+ReviveOverlay/ReviveOverlay_resource.rc
