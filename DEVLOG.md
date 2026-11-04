@@ -2,45 +2,43 @@
 
 Nov 3, 2026 · @Gabor Bartko
 
-Online változat (ez az elsődleges, ez a fájl annak exportja): https://claude.ai/artifact/Tea8v4BbRGpEwvk1ixaHnc
+## Goal
 
-## Cél
+We want to run Oculus (Meta) PC VR games with Revive, on the ReviveXR (OpenXR) backend, under SteamVR. The work happens on the `steamframe` branch, and the repository lives at `D:\Revive`.
 
-Oculus (Meta) PC VR játékokat szeretnénk Revive-val, a ReviveXR (OpenXR) backenden futtatni SteamVR alatt. A munka a `steamframe` ágon folyik, a repó helye `D:\Revive`.
+The starting problem was that the games reported that no Oculus Rift was connected, and they did not start at all. The main cause: ReviveXR requested OpenXR 1.1, and SteamVR rejected it.
 
-A kiinduló hiba az volt, hogy a játékok szerint nincs Oculus Rift csatlakoztatva, és egyáltalán nem indultak el. Ennek fő oka: a ReviveXR OpenXR 1.1-et kért, a SteamVR pedig ezt elutasította.
+## Current status
 
-## Jelenlegi állapot
+All changes are committed on the `steamframe` branch (pushed to the github.com/Gabiga71/ReFrame repository). First Contact ran all the way through on the Frame for the first time on 2026-11-03 at 19:32: picture, sound and interaction all fine.
 
-Minden változás commitolva van a `steamframe` ágon (pusholva a github.com/Gabiga71/ReFrame repóba). A First Contact 2026-11-03 19:32-kor először futott végig a Frame-en: kép, hang és interakció rendben.
+- The Oculus heartbeat works: the server keeps returning `HTTP 200`.
+- In the last test, the overlay tried to launch `oculus-first-contact` twice. It was not installed at the time; it has been installed since (around 19:00 on 11-03).
+- The system has to be restarted before the next test because of SteamVR.
+- Untracked files remain only in the `Externals/openvr` submodule. We have not touched them.
 
-- Az Oculus heartbeat működik: a szerver folyamatosan `HTTP 200`-at ad vissza.
-- Az overlay a legutóbbi teszten kétszer próbálta indítani az `oculus-first-contact`-ot. Akkor még nem volt telepítve, azóta (11-03 19:00 körül) fel lett telepítve.
-- A rendszert a SteamVR miatt újra kell indítani a következő teszt előtt.
-- Csak az `Externals/openvr` submodule-ban maradtak nem követett fájlok. Ezekhez nem nyúltunk.
+## Changes made
 
-## Elvégzett változások
-
-| Komponens | Fájl | Változás | Miért |
+| Component | File | Change | Why |
 | --- | --- | --- | --- |
-| ReviveXR | `Runtime.cpp` | OpenXR 1.0-t kér az `XR_CURRENT_API_VERSION` helyett | A SteamVR az 1.1-es kérést `XR_ERROR_API_VERSION_UNSUPPORTED` hibával utasítja el |
-| ReviveXR | `Runtime.cpp` | `HACK_WAIT_FOR_SESSION_READY` bekapcsolva SteamVR-re | A SteamVR 2.x futó session nélkül nem ad view adatot |
-| ReviveXR | `Session.cpp` | Az ideiglenes session minden kilépési úton lezárul, a READY-re várás legfeljebb 5 s | Eddig szivárgott, és ettől `XR_ERROR_LIMIT_REACHED` + végtelen ciklus jött |
-| ReviveXR | `Swapchain.cpp` | Formátumválasztás tartaléklistával | A SteamVR csak sRGB formátumokat fogad el. Mellékhatás: kifakult színek lehetnek |
-| ReviveXR | `Common.cpp/.h`, `REV_CAPI.cpp` | Napló a `ReviveXR.txt` fájlba: hibás hívások, session állapotok, első frame | Eddig nem volt semmilyen napló |
-| ReviveOverlay | `oculusoauthtokencontroller.cpp`, `windowsservices.cpp`, `Oculus.js` | A heartbeat WinHTTP-n megy, form-encoded törzzsel | A Qt 5-ben nincs TLS OpenSSL nélkül, és a paraméterek régen nem érkeztek meg |
-| ReviveOverlay | `oculusoauthtokencontroller.cpp` | Az Oculus DB másolása a `-wal` és `-shm` fájlokkal együtt | WAL módban a fő fájl üres lehet |
-| ReviveOverlay | `revivemanifestcontroller.cpp` | A nem telepített support appok kiszűrése | Az elavult bejegyzések eltakarják a telepített appokat |
-| ReviveOverlay | `revivemanifestcontroller.cpp`, `trayiconcontroller.cpp` | Nincs dupla indítás, és jelennek meg tálcaértesítések | Két példány versenyez a headsetért, és mindkettő elbukik |
-| ReviveInjector | `main.cpp` | A CreateProcess hibakódját és hibaüzenetét naplózza | Eddig csak „Failed to create process” állt a naplóban |
-| Build | `vcpkg.json`, `vcpkg-triplets/` | vcpkg manifest (detours, openxr-loader, glfw3), statikus v142 tripletek | Reprodukálható függőségek |
-| Build | `.gitignore` | Oculus SDK, `/VS/` és a qmake által generált fájlok kizárása | Ne kerüljenek a repóba |
+| ReviveXR | `Runtime.cpp` | Requests OpenXR 1.0 instead of `XR_CURRENT_API_VERSION` | SteamVR rejects the 1.1 request with `XR_ERROR_API_VERSION_UNSUPPORTED` |
+| ReviveXR | `Runtime.cpp` | `HACK_WAIT_FOR_SESSION_READY` enabled for SteamVR | SteamVR 2.x provides no view data without a running session |
+| ReviveXR | `Session.cpp` | The temporary session is closed on every exit path; waiting for READY is capped at 5 s | It used to leak, which led to `XR_ERROR_LIMIT_REACHED` and an infinite loop |
+| ReviveXR | `Swapchain.cpp` | Format selection with a fallback list | SteamVR only accepts sRGB formats. Side effect: colors may look washed out |
+| ReviveXR | `Common.cpp/.h`, `REV_CAPI.cpp` | Logging to `ReviveXR.txt`: failed calls, session states, first frame | There was no log at all before |
+| ReviveOverlay | `oculusoauthtokencontroller.cpp`, `windowsservices.cpp`, `Oculus.js` | The heartbeat goes over WinHTTP with a form-encoded body | Qt 5 has no TLS without OpenSSL, and the parameters never arrived in the old version |
+| ReviveOverlay | `oculusoauthtokencontroller.cpp` | The Oculus DB is copied together with its `-wal` and `-shm` files | In WAL mode the main file can be empty |
+| ReviveOverlay | `revivemanifestcontroller.cpp` | Support apps that are not installed are filtered out | Stale entries hide the installed apps |
+| ReviveOverlay | `revivemanifestcontroller.cpp`, `trayiconcontroller.cpp` | No double launches, and tray notifications are shown | Two instances compete for the headset and both fail |
+| ReviveInjector | `main.cpp` | Logs the CreateProcess error code and error message | The log used to say only "Failed to create process" |
+| Build | `vcpkg.json`, `vcpkg-triplets/` | vcpkg manifest (detours, openxr-loader, glfw3), static v142 triplets | Reproducible dependencies |
+| Build | `.gitignore` | Excludes the Oculus SDK, `/VS/` and the files generated by qmake | Keep them out of the repository |
 
-## Commitok
+## Commits
 
-Tíz új commit került a `91c5792` (Update version.h) után, mind fent van a ReFrame repóban.
+Ten new commits were added after `91c5792` (Update version.h), all of them are in the ReFrame repository.
 
-| Hash | Üzenet |
+| Hash | Message |
 | --- | --- |
 | `d9f1f34` | Note that other SteamVR headsets are untested with ReFrame |
 | `4077b66` | Describe the compatibility layer as targeting the Steam Frame |
@@ -53,63 +51,63 @@ Tíz új commit került a `91c5792` (Update version.h) után, mind fent van a Re
 | `ed80a03` | Ignore qmake generated ReviveOverlay build files |
 | `797be89` | Make ReviveXR work on SteamVR and harden the overlay launch path |
 
-## Tesztelés és naplók
+## Testing and logs
 
-Mindhárom napló a `%LOCALAPPDATA%\Revive\` mappában van. A `ReviveXR.txt` hozzáfűzéssel ír, ezért egy tiszta mérés előtt törölni kell.
+All three logs are in the `%LOCALAPPDATA%\Revive\` folder. `ReviveXR.txt` is written in append mode, so delete it before a clean measurement.
 
-| Fájl | Ki írja | Mit keressünk benne |
+| File | Written by | What to look for |
 | --- | --- | --- |
-| `ReviveOverlay.txt` | ReviveOverlay | `Launching application`, `Support app is not installed`, heartbeat státusz |
-| `ReviveInjector.txt` | ReviveInjector | `Failed to create process (error N)` és a munkakönyvtár |
-| `ReviveXR.txt` | ReviveXR (a játék folyamatában) | A kért OpenXR verzió, a runtime neve, `FAILED:` sorok, session állapotok, `first frame reached ovr_EndFrame` |
+| `ReviveOverlay.txt` | ReviveOverlay | `Launching application`, `Support app is not installed`, heartbeat status |
+| `ReviveInjector.txt` | ReviveInjector | `Failed to create process (error N)` and the working directory |
+| `ReviveXR.txt` | ReviveXR (in the game process) | The requested OpenXR version, the runtime name, `FAILED:` lines, session states, `first frame reached ovr_EndFrame` |
 
-A legutóbbi teszten (2026-11-03, 18:31-ig) csak a `ReviveOverlay.txt` jött létre. Az injector és a ReviveXR naplója hiányzik, mert a First Contact nem indult el, így ezek a komponensek nem futottak.
+In the last test (2026-11-03, up to 18:31) only `ReviveOverlay.txt` was created. The injector and ReviveXR logs are missing because First Contact did not start, so those components never ran.
 
-## Nyitott problémák és következő lépések
+## Open issues and next steps
 
-- [x] Egy telepített Oculus játék indítása az overlayből (ne First Contact legyen), utána a három napló átnézése
-- [x] Ellenőrizni, hogy a `ReviveXR.txt` szerint OpenXR 1.0 létrejön-e, és mi a runtime neve (ha nem `SteamVR/OpenXR`, a hackek nem kapcsolnak be)
-- [x] Ha van kép, de a színek kifakultak: mutable format swapchain, a view-k az eredetileg kért formátumban
-- [ ] A support manifest statikus, ezért a nem telepített appok kulcsai továbbra is látszanak a SteamVR-nek, ha legalább egy app megmarad. Hosszabb távon futásidőben kellene generálni
-- [ ] Megfontolni, hogy a `HACK_WAIT_FOR_SESSION_READY` minden runtime-on feltétel nélkül fusson
-- [ ] Ha működik: push, majd PR a `master` ágra
+- [x] Launch an installed Oculus game from the overlay (not First Contact), then review the three logs
+- [x] Check in `ReviveXR.txt` whether OpenXR 1.0 is created and what the runtime is called (if it is not `SteamVR/OpenXR`, the hacks are not enabled)
+- [x] If there is a picture but the colors are washed out: mutable format swapchain, with views in the originally requested format
+- [ ] The support manifest is static, so the keys of apps that are not installed are still visible to SteamVR as long as at least one app remains. In the longer term it should be generated at runtime
+- [ ] Consider running `HACK_WAIT_FOR_SESSION_READY` unconditionally on every runtime
+- [ ] If it works: push, then open a PR to the `master` branch
 
-## Folytatás újraindítás után
+## Resuming after a restart
 
-1. Indítsd el a SteamVR-t, és ellenőrizd, hogy az OpenXR runtime a SteamVR legyen.
-2. Töröld a `%LOCALAPPDATA%\Revive\ReviveXR.txt` és a `ReviveInjector.txt` fájlt, ha léteznek.
-3. Indítsd el a ReviveOverlay-t a `Release` buildből.
-4. Indíts el egy telepített Oculus játékot a dashboardról, egyszer kattints, és várd meg a tálcaértesítést.
-5. A Claude Code-ban a `D:\Revive` mappában mondd ezt: „Olvasd el a devlogot és a naplókat”, és add meg ennek a dokumentumnak a linkjét.
+1. Start SteamVR and make sure SteamVR is the OpenXR runtime.
+2. Delete `%LOCALAPPDATA%\Revive\ReviveXR.txt` and `ReviveInjector.txt` if they exist.
+3. Start ReviveOverlay from the `Release` build.
+4. Launch an installed Oculus game from the dashboard, click once, and wait for the tray notification.
+5. Check the three logs in `%LOCALAPPDATA%\Revive\` (see "Testing and logs" above). If the game does not start or there is no picture in the headset, open an issue at https://github.com/Gabiga71/ReFrame/issues and attach `ReviveXR.txt`.
 
-## Napló
+## Log
 
-| Dátum | Tétel | Röviden |
+| Date | Item | Summary |
 | --- | --- | --- |
-| 2026-11-03 | README: Steam Frame leírás | A „Revive Compatibility Layer” bevezető mondata már nem a HTC Vive-ot és az Indexet, hanem a Steam Frame-et nevezi meg (SteamVR-en át), és jelzi, hogy más SteamVR-headsetek is működhetnek, de ReFrame-mel nincsenek tesztelve (`4077b66`, `d9f1f34`) |
-| 2026-11-03 | README telepítési lépések | Az eredeti Revive README Installation része a ReFrame-re igazítva: letöltés a Gabiga71/ReFrame/releases oldalról (nem `/latest`, mert az kihagyja a pre-release-t), OpenXR-alapértelmezés, SteamVR mint OpenXR runtime, ReFrame issues link. A wiki- és kompatibilitási linkek a Revive-ra mutatnak továbbra is |
-| 2026-11-03 | Telepítő (3.2.0-reframe.1) | NSIS 3.13 és GitHub CLI telepítve (winget). Teljes újrafordítás x64 + x86, overlay install lépés (SupportAssets, vrmanifestek), vc_redist.x64 (Microsoft-aláírás ellenőrizve). A telepítő alapból bekapcsolja a `UseOpenXR`-t, ha a felhasználó még nem választott (commit `676a978`). Eredmény: `ReFrame-Revive-3.2.0-reframe.1-Setup.exe`, 55 MB, 193 fájl. Kiadva pre-release-ként: https://github.com/Gabiga71/ReFrame/releases/tag/v3.2.0-reframe.1 (tag → `676a978`). Tiszta gépen még nincs tesztelve |
-| 2026-11-03 | README és devlog a repóban | Döntés: a projekt nem lesz átnevezve, hogy az eredeti Revive-szerzők érdeme és története ép maradjon. A README elejére ReFrame-bevezető került (fork, cél, MIT, az eredeti szerzők érdeme), az eredeti README változatlanul alatta. A `DEVLOG.md` bekerült a repóba |
-| 2026-11-03 | Push a ReFrame repóba | Új remote: `reframe` = https://github.com/Gabiga71/ReFrame. A helyi klón shallow volt, ezért a push előbb elbukott; `git fetch --unshallow origin` után a teljes Revive-történet (1807 commit) felment. Feltöltve: `steamframe` (`ab2de1b`, alapértelmezett ág) és `master` (`91c5792`). A `DEVLOG.md` helyi marad |
-| 2026-11-03 | Teszt 21:08 (Lone Echo) | Működik a Frame-en: 6 perc, 31 328 frame, tiszta kilépés (`ovr_Destroy`, `ovr_Shutdown`, `ExitProcess(0)`). A `SetXrInputConfig` elsőre sikeres, nincs Home. A játék `R11G11B10_FLOAT` (26) formátumot kér, ezt a tartaléklista `R16G16B16A16_FLOAT`-ra (10) cseréli; mip proxy nem kellett. A `HACK_FORCE_FOV_FALLBACK` miatt egy ideiglenes session van |
-| 2026-11-03 | Új overlay élesben | Az ab2de1b overlay linkelve és elindítva. A „Use OpenXR runtime” bekapcsolása után a registryben HKCU\Software\Revive\ReviveOverlay\UseOpenXR = true |
-| 2026-11-03 | Commit f5c0f76, ab2de1b | ReviveXR-javítások (mip proxy, virtuális destruktor, FOV-gyorsítótár, közös InputManager, kezdeti irány, diagnosztika), illetve a build bemásolja az Input mappát, az overlay megjegyzi az OpenXR-kapcsolót. A tévesnek bizonyult indoklásokat a kódkommentekből kijavítottam. Az új overlay még nincs linkelve, mert a futó példány zárolja az exe-t |
-| 2026-11-03 | Teszt 20:16 és 20:21 (First Contact) | Mindkét indítás jó volt (kép, kontroller rendben). A második kilépés után a Frame-en egy session nem zárult be. A PC oldalán mindkét kilépés tiszta: `STOPPING` → `xrEndSession`, `EXITING` → a játék kilép, a SteamVR „Completed simple quit transition”. Utána 20:22:54-kor a Frame `Universe 424242`-re váltott, 20:22:58-kor a kapcsolat inaktív lett. Nyitott kérdés, mi ragadt be a Frame-en |
-| 2026-11-03 | Teszt 20:09 (First Contact) | Működik a Frame-en: a `Release\Input` bemásolása után a SteamVR elfogadta a kontroller-konfigurációt (`SetXrInputConfig: Loading 2 bindings`), nem kapcsolt Home-ra, az irány jó. A korábbi „session-verseny” diagnózis téves volt, a kapcsolatbontást a sikertelen `SetXrInputConfig` okozta. Egy sikeres futás még nem bizonyíték, további tesztek kellenek |
-| 2026-11-03 | Teszt 20:03 + Input mappa | A közös InputManager nem segített, ugyanaz a `SetXrInputConfig` hiba. Új nyom: a vrmanifest minden apphoz `action_manifest_path: Input/action_manifest.json`-t ír (`Oculus.js`), de a `Release\Input` mappa hiányzott (a telepítő másolja be), a SteamVR minden indításkor `ActionManifestError_FileNotFound`-ot ír. A `Revive/Input/*.json` bemásolva a `Release\Input`-ba. Megjegyzés: az OpenVR-es manifest is `/actions/touch` action setet használ, más action-nevekkel, mint a ReviveXR |
-| 2026-11-03 | Javítás (közös InputManager) | Az action setek és binding-javaslatok OpenXR-instance-onként egyszer jönnek létre, minden `ovr_Create` ugyanazt használja; az `ovr_Shutdown` az instance előtt bontja le. Az input-hívások hibái mostantól a naplóba kerülnek. Lefordítva, nincs commitolva |
-| 2026-11-03 | Teszt 19:48 és 19:53 (First Contact) | Az iránybeállítás lefutott, de a kép megint nem ment ki. Ok: a SteamVR-ben `SetXrInputConfig failed. Failed to load manifest`, utána 0,2 s-mal bontja a kapcsolatot, és a játék nem-scene appként jön vissza. Ez minden képtelen futásnál ott van (19:07, 19:14, 19:22, 19:48, 19:53), a két sikeresnél (18:59, 19:32) nincs. Gyanú: a második `ovr_Create` újra létrehozza az azonos nevű action seteket |
-| 2026-11-03 | Javítás (kezdeti irány) | Session-induláskor a padlószintű origó a headset irányába fordul (csak yaw), a középpontja a play area közepén marad. Lefordítva, nincs commitolva |
-| 2026-11-03 | Teszt 19:31 (First Contact) | Működik a Frame-en: kép, hang, interakció rendben, 9 perc, 50 612 frame, tiszta kilépés. Egy hiba maradt: a kezdeti irány közel 180°-kal el volt fordulva (a padlószintű tér a SteamVR play area előre-irányát követte) |
-| 2026-11-03 | Javítás (session-verseny) | A FOV-lekérdező ideiglenes session folyamatonként csak egyszer jön létre, az eredményt a ReviveXR eltárolja. Az Unreal második `ovr_Create`-je így nem nyit új ideiglenes sessiont közvetlenül a valódi előtt. Lefordítva, nincs commitolva |
-| 2026-11-03 | Teszt 19:22 (First Contact) | A mip proxy működik: a játék fut, rajzol, a fejkövetés és a hang megy, de a kép csak a monitoron látszik. A SteamVR minden `xrCreateSession`-t scene app indulásnak, minden `xrDestroySession`-t kilépésnek vesz. A második ideiglenes session lebontása után a valódi session kapcsolata megszakadt, a játék „generált” instance-ként csatlakozott vissza, és 10 s után a SteamVR a saját Home nézetét tette a headsetre |
-| 2026-11-03 | Javítás (mip proxy) | A 19:14-es napló igazolta: a SteamVR 1 mip-szintes képet ad 5 helyett, a játék a mip 1-re kér nézetet. Javítás: ilyenkor a D3D11 swapchain saját, teljes mip-láncú proxy textúrát ad a játéknak, és commitkor a SteamVR képére másolja. Az ősosztály virtuális destruktort kapott (a D3D12 cleanup eddig nem futott). Lefordítva, nincs commitolva |
-| 2026-11-03 | Teszt 19:07 (First Contact) | Meglett a kilépés oka: a játék egy 16×16-os, 5 mip-szintű swapchainre `B8G8R8A8_UNORM` RTV-t kér, ezt a D3D11 `E_INVALIDARG`-gal elutasítja, és az Unreal fatális hibával (kód 1) kilép. A textúra `B8G8R8A8_TYPELESS`, így nem a formátum a gond. Gyanú: a SteamVR kevesebb mip-szintet hoz létre. További naplópontok kellenek a megerősítéshez |
-| 2026-11-03 | Diagnosztika | Új naplópontok a ReviveXR-ben: swapchain-formátumok, sikertelen D3D11-nézetek, kivételek, `ExitProcess`/`TerminateProcess` hívója. Lefordítva, nincs commitolva |
-| 2026-11-03 | Teszt (First Contact, OpenXR) | Az injektálás sikerült, OpenXR 1.0 a SteamVR/OpenXR 2.18.4-en, a session létrejött. A játék a swapchain létrehozása után 0,4 s-mal csendben kilépett (87 → 91 formátumcsere után), `ovr_GetSessionStatus` hívás és Windows-hibaesemény nélkül |
-| 2026-11-03 | Hibaok | A tálcamenü „Use OpenXR runtime” opciója alapból ki van kapcsolva, és újraindításkor elvész. Kikapcsolva az overlay OpenVR-en át indít, `/openxr` nélkül, így a ReviveXR be sem töltődik |
-| 2026-11-03 | Újraindítás után | SteamVR fut, az OpenXR runtime a SteamVR. A First Contact és a Lone Echo telepítve van |
-| 2026-11-03 | Devlog | Elkészült ez a dokumentum, számítógép-újraindítás a SteamVR miatt |
-| 2026-11-03 | Commit `ed80a03` | A qmake által generált fájlok bekerültek a `.gitignore`-ba |
-| 2026-11-03 | Commit `797be89` | ReviveXR SteamVR-javítások, overlay és injector módosítások, vcpkg |
-| 2026-11-03 | Teszt | A heartbeat `HTTP 200`-at ad, a First Contact indítása sikertelen (nincs telepítve) |
+| 2026-11-03 | README: Steam Frame description | The opening sentence of "Revive Compatibility Layer" now names the Steam Frame (through SteamVR) instead of the HTC Vive and the Index, and notes that other SteamVR headsets may work but have not been tested with ReFrame (`4077b66`, `d9f1f34`) |
+| 2026-11-03 | README installation steps | The Installation section of the original Revive README adapted to ReFrame: download from the Gabiga71/ReFrame/releases page (not `/latest`, because that skips the pre-release), OpenXR on by default, SteamVR as the OpenXR runtime, link to the ReFrame issues. The wiki and compatibility links still point to Revive |
+| 2026-11-03 | Installer (3.2.0-reframe.1) | NSIS 3.13 and GitHub CLI installed (winget). Full rebuild for x64 + x86, overlay install step (SupportAssets, vrmanifests), vc_redist.x64 (Microsoft signature verified). The installer turns on `UseOpenXR` by default if the user has not chosen yet (commit `676a978`). Result: `ReFrame-Revive-3.2.0-reframe.1-Setup.exe`, 55 MB, 193 files. Released as a pre-release: https://github.com/Gabiga71/ReFrame/releases/tag/v3.2.0-reframe.1 (tag → `676a978`). Not yet tested on a clean machine |
+| 2026-11-03 | README and devlog in the repository | Decision: the project will not be renamed, so that the credit and history of the original Revive authors stay intact. A ReFrame introduction was added at the top of the README (fork, goal, MIT, credit to the original authors), with the original README unchanged below it. `DEVLOG.md` was added to the repository |
+| 2026-11-03 | Push to the ReFrame repository | New remote: `reframe` = https://github.com/Gabiga71/ReFrame. The local clone was shallow, so the push failed at first; after `git fetch --unshallow origin` the full Revive history (1807 commits) went up. Uploaded: `steamframe` (`ab2de1b`, default branch) and `master` (`91c5792`). `DEVLOG.md` stays local |
+| 2026-11-03 | Test 21:08 (Lone Echo) | Works on the Frame: 6 minutes, 31,328 frames, clean exit (`ovr_Destroy`, `ovr_Shutdown`, `ExitProcess(0)`). `SetXrInputConfig` succeeds on the first try, no Home. The game requests the `R11G11B10_FLOAT` (26) format, which the fallback list replaces with `R16G16B16A16_FLOAT` (10); the mip proxy was not needed. There is one temporary session because of `HACK_FORCE_FOV_FALLBACK` |
+| 2026-11-03 | New overlay live | The ab2de1b overlay linked and started. After turning on "Use OpenXR runtime", the registry has HKCU\Software\Revive\ReviveOverlay\UseOpenXR = true |
+| 2026-11-03 | Commits f5c0f76, ab2de1b | ReviveXR fixes (mip proxy, virtual destructor, FOV cache, shared InputManager, initial orientation, diagnostics); the build now copies the Input folder, and the overlay remembers the OpenXR toggle. I corrected the explanations in code comments that turned out to be wrong. The new overlay is not linked yet, because the running instance locks the exe |
+| 2026-11-03 | Tests 20:16 and 20:21 (First Contact) | Both launches were good (picture and controllers fine). After the second exit, a session on the Frame did not close. On the PC side both exits are clean: `STOPPING` → `xrEndSession`, `EXITING` → the game quits, SteamVR logs "Completed simple quit transition". Then at 20:22:54 the Frame switched to `Universe 424242`, and at 20:22:58 the connection became inactive. Open question: what got stuck on the Frame |
+| 2026-11-03 | Test 20:09 (First Contact) | Works on the Frame: after copying `Release\Input`, SteamVR accepted the controller configuration (`SetXrInputConfig: Loading 2 bindings`), did not switch to Home, and the orientation is correct. The earlier "session race" diagnosis was wrong; the disconnect was caused by the failed `SetXrInputConfig`. One successful run is not proof yet, more tests are needed |
+| 2026-11-03 | Test 20:03 + Input folder | The shared InputManager did not help, same `SetXrInputConfig` error. New lead: the vrmanifest writes `action_manifest_path: Input/action_manifest.json` for every app (`Oculus.js`), but the `Release\Input` folder was missing (the installer copies it in), and SteamVR logs `ActionManifestError_FileNotFound` on every launch. Copied `Revive/Input/*.json` into `Release\Input`. Note: the OpenVR manifest also uses the `/actions/touch` action set, with different action names than ReviveXR |
+| 2026-11-03 | Fix (shared InputManager) | Action sets and binding suggestions are created once per OpenXR instance, and every `ovr_Create` uses the same ones; `ovr_Shutdown` tears them down before the instance. Errors from input calls now go to the log. Built, not committed |
+| 2026-11-03 | Tests 19:48 and 19:53 (First Contact) | The orientation adjustment ran, but the picture again did not reach the headset. Cause: SteamVR logs `SetXrInputConfig failed. Failed to load manifest`, then drops the connection 0.2 s later, and the game comes back as a non-scene app. This appears in every run without a picture (19:07, 19:14, 19:22, 19:48, 19:53), and not in the two successful ones (18:59, 19:32). Suspicion: the second `ovr_Create` recreates the action sets with the same names |
+| 2026-11-03 | Fix (initial orientation) | When the session starts, the floor-level origin is rotated to face the headset's direction (yaw only), while its center stays at the center of the play area. Built, not committed |
+| 2026-11-03 | Test 19:31 (First Contact) | Works on the Frame: picture, sound and interaction fine, 9 minutes, 50,612 frames, clean exit. One bug remained: the initial orientation was turned by nearly 180° (the floor-level space followed the forward direction of the SteamVR play area) |
+| 2026-11-03 | Fix (session race) | The temporary session used for the FOV query is created only once per process, and ReviveXR caches the result. This way Unreal's second `ovr_Create` does not open a new temporary session right before the real one. Built, not committed |
+| 2026-11-03 | Test 19:22 (First Contact) | The mip proxy works: the game runs, renders, head tracking and sound work, but the picture only shows on the monitor. SteamVR treats every `xrCreateSession` as a scene app launch and every `xrDestroySession` as an exit. After the second temporary session was torn down, the real session's connection broke, the game reconnected as a "generated" instance, and after 10 s SteamVR put its own Home view on the headset |
+| 2026-11-03 | Fix (mip proxy) | The 19:14 log confirmed it: SteamVR provides an image with 1 mip level instead of 5, and the game requests a view on mip 1. Fix: in this case the D3D11 swapchain gives the game its own proxy texture with a full mip chain, and copies it onto the SteamVR image on commit. The base class got a virtual destructor (the D3D12 cleanup never ran before). Built, not committed |
+| 2026-11-03 | Test 19:07 (First Contact) | Found the cause of the exit: the game requests a `B8G8R8A8_UNORM` RTV on a 16×16 swapchain with 5 mip levels, D3D11 rejects it with `E_INVALIDARG`, and Unreal exits with a fatal error (code 1). The texture is `B8G8R8A8_TYPELESS`, so the format is not the problem. Suspicion: SteamVR creates fewer mip levels. More log points are needed to confirm |
+| 2026-11-03 | Diagnostics | New log points in ReviveXR: swapchain formats, failed D3D11 views, exceptions, the caller of `ExitProcess`/`TerminateProcess`. Built, not committed |
+| 2026-11-03 | Test (First Contact, OpenXR) | Injection succeeded, OpenXR 1.0 on SteamVR/OpenXR 2.18.4, the session was created. The game quietly exited 0.4 s after creating the swapchain (after 87 → 91 format substitution), with no `ovr_GetSessionStatus` call and no Windows error event |
+| 2026-11-03 | Root cause | The "Use OpenXR runtime" option in the tray menu is off by default and is lost on restart. When it is off, the overlay launches through OpenVR without `/openxr`, so ReviveXR is never even loaded |
+| 2026-11-03 | After restart | SteamVR is running, SteamVR is the OpenXR runtime. First Contact and Lone Echo are installed |
+| 2026-11-03 | Devlog | This document was created; computer restart because of SteamVR |
+| 2026-11-03 | Commit `ed80a03` | Files generated by qmake added to `.gitignore` |
+| 2026-11-03 | Commit `797be89` | ReviveXR SteamVR fixes, overlay and injector changes, vcpkg |
+| 2026-11-03 | Test | The heartbeat returns `HTTP 200`, launching First Contact fails (not installed) |
